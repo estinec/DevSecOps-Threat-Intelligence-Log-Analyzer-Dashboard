@@ -6,6 +6,7 @@ from typing import Any, Dict, Iterable, List
 import pyarrow as pa
 import pyarrow.parquet as pq
 
+from app.db.lakehouse import query_parquet
 from app.schemas.event import NormalizedEvent
 
 
@@ -54,3 +55,32 @@ def write_gold_ip_summary_parquet(
         pq.write_table(table, out_path)
 
     return out_path
+
+
+def read_latest_gold_ip_summary(
+    gold_dir: str | Path = "backend/data/lakehouse/gold",
+) -> List[Dict[str, Any]]:
+    directory = Path(gold_dir)
+    if not directory.exists():
+        return []
+
+    parquet_files = sorted(directory.glob("gold_ip_summary_*.parquet"))
+    if not parquet_files:
+        return []
+
+    latest_file = parquet_files[-1]
+    rows = query_parquet(
+        f'SELECT source_ip, total_requests, failed_logins, client_errors_4xx, server_errors_5xx '
+        f'FROM read_parquet("{latest_file}") ORDER BY source_ip'
+    )
+
+    return [
+        {
+            "source_ip": r[0],
+            "total_requests": r[1],
+            "failed_logins": r[2],
+            "client_errors_4xx": r[3],
+            "server_errors_5xx": r[4],
+        }
+        for r in rows
+    ]

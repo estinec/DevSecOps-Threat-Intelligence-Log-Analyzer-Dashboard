@@ -34,8 +34,11 @@ def test_alerts_endpoint_with_custom_thresholds():
     assert rule_ids == ["RULE-AUTH-001", "RULE-VOL-001"]
 
 
-def test_post_ingest_raw_lines_writes_parquet_and_returns_alerts(tmp_path: Path, monkeypatch):
+def test_post_ingest_and_get_lakehouse_summary(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(main_module, "LAKEHOUSE_ROOT", tmp_path / "lakehouse")
+
+    empty_res = client.get("/lakehouse/summary")
+    assert empty_res.status_code == 404
 
     response = client.post(
         "/ingest",
@@ -63,6 +66,19 @@ def test_post_ingest_raw_lines_writes_parquet_and_returns_alerts(tmp_path: Path,
     assert Path(body["artifacts"]["silver_parquet"]).exists()
     assert Path(body["artifacts"]["gold_parquet"]).exists()
     assert [alert["rule_id"] for alert in body["alerts"]] == ["RULE-AUTH-001", "RULE-VOL-001"]
+
+    lakehouse_res = client.get("/lakehouse/summary")
+    assert lakehouse_res.status_code == 200
+    rows = lakehouse_res.json()
+    assert rows == [
+        {
+            "source_ip": "203.0.113.25",
+            "total_requests": 2,
+            "failed_logins": 2,
+            "client_errors_4xx": 2,
+            "server_errors_5xx": 0,
+        }
+    ]
 
 
 def test_post_ingest_requires_source():

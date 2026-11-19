@@ -5,7 +5,11 @@ from typing import Any, Dict, List, Optional
 from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel
 
-from app.analytics.gold import build_ip_summary_rows, write_gold_ip_summary_parquet
+from app.analytics.gold import (
+    build_ip_summary_rows,
+    read_latest_gold_ip_summary,
+    write_gold_ip_summary_parquet,
+)
 from app.db.lakehouse import write_bronze_parquet, write_silver_parquet
 from app.detections.rules import run_detections
 from app.ingestion.pipeline import ingest_log_file
@@ -54,6 +58,17 @@ def health() -> Dict[str, str]:
 def get_summary(log_path: str = str(DEFAULT_SAMPLE_LOG)) -> List[Dict[str, Any]]:
     result = ingest_log_file(log_path)
     return build_ip_summary_rows(result.valid_events)
+
+
+@app.get("/lakehouse/summary")
+def get_lakehouse_summary() -> List[Dict[str, Any]]:
+    rows = read_latest_gold_ip_summary(LAKEHOUSE_ROOT / "gold")
+    if not rows:
+        raise HTTPException(
+            status_code=404,
+            detail="No Gold Parquet summary found. Run POST /ingest first.",
+        )
+    return rows
 
 
 @app.get("/alerts")
