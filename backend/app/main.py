@@ -11,8 +11,10 @@ from app.analytics.gold import (
     write_gold_ip_summary_parquet,
 )
 from app.db.lakehouse import (
+    read_latest_dlq_lines,
     read_latest_silver_events,
     write_bronze_parquet,
+    write_dlq_parquet,
     write_silver_parquet,
 )
 from app.detections.rules import run_detections
@@ -94,6 +96,11 @@ def get_lakehouse_alerts(
     return [asdict(alert) for alert in alerts]
 
 
+@app.get("/lakehouse/dlq")
+def get_lakehouse_dlq() -> List[Dict[str, Any]]:
+    return read_latest_dlq_lines(LAKEHOUSE_ROOT / "dlq")
+
+
 @app.get("/alerts")
 def get_alerts(
     log_path: str = str(DEFAULT_SAMPLE_LOG),
@@ -146,6 +153,13 @@ def post_ingest(payload: IngestRequest) -> Dict[str, Any]:
         events=valid_events,
         output_dir=LAKEHOUSE_ROOT / "gold",
     )
+    dlq_path: Optional[Path] = None
+    if dead_letter_lines:
+        dlq_path = write_dlq_parquet(
+            dead_letter_lines=dead_letter_lines,
+            source_name=source_name,
+            output_dir=LAKEHOUSE_ROOT / "dlq",
+        )
 
     alerts = run_detections(
         valid_events,
@@ -165,6 +179,7 @@ def post_ingest(payload: IngestRequest) -> Dict[str, Any]:
             "bronze_parquet": str(bronze_path),
             "silver_parquet": str(silver_path),
             "gold_parquet": str(gold_path),
+            "dlq_parquet": str(dlq_path) if dlq_path else None,
         },
         "alerts": [asdict(alert) for alert in alerts],
     }

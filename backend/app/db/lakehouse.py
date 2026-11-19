@@ -84,3 +84,57 @@ def read_latest_silver_events(
 def query_parquet(sql: str) -> List[tuple]:
     with duckdb.connect(database=":memory:") as con:
         return con.execute(sql).fetchall()
+
+
+def write_dlq_parquet(
+    dead_letter_lines: Iterable[str],
+    source_name: str,
+    output_dir: str | Path = "backend/data/lakehouse/dlq",
+) -> Path:
+    dlq_dir = Path(output_dir)
+    dlq_dir.mkdir(parents=True, exist_ok=True)
+
+    rejected_at = datetime.now(timezone.utc).isoformat()
+    rows: List[Dict[str, Any]] = [
+        {
+            "raw_line": line,
+            "source_name": source_name,
+            "rejected_at": rejected_at,
+        }
+        for line in dead_letter_lines
+    ]
+
+    timestamp_slug = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    out_path = dlq_dir / f"dlq_{timestamp_slug}.parquet"
+
+    if rows:
+        table = pa.Table.from_pylist(rows)
+        pq.write_table(table, out_path)
+
+    return out_path
+
+
+def read_latest_dlq_lines(
+    dlq_dir: str | Path = "backend/data/lakehouse/dlq",
+) -> List[Dict[str, Any]]:
+    directory = Path(dlq_dir)
+    if not directory.exists():
+        return []
+
+    parquet_files = sorted(directory.glob("dlq_*.parquet"))
+    if not parquet_files:
+        return []
+
+    latest_file = parquet_files[-1]
+    rows = query_parquet(
+        f'SELECT raw_line, source_name, rejected_at FROM read_parquet("{latest_file}")'
+    )
+
+    return [
+        {
+            "raw_line": r[0],
+            "source_name": r[1],
+            "rejected_at": r[2],
+        }
+        for r in rows
+    ]
