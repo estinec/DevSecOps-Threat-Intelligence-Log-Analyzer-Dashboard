@@ -61,6 +61,26 @@ def write_silver_parquet(
     return out_path
 
 
+def read_latest_silver_events(
+    silver_dir: str | Path = "backend/data/lakehouse/silver",
+) -> List[NormalizedEvent]:
+    directory = Path(silver_dir)
+    if not directory.exists():
+        return []
+
+    parquet_files = sorted(directory.glob("silver_*.parquet"))
+    if not parquet_files:
+        return []
+
+    latest_file = parquet_files[-1]
+    with duckdb.connect(database=":memory:") as con:
+        rel = con.execute(f'SELECT * FROM read_parquet("{latest_file}")')
+        columns = [desc[0] for desc in rel.description]
+        records = [dict(zip(columns, row)) for row in rel.fetchall()]
+
+    return [NormalizedEvent.model_validate(record) for record in records]
+
+
 def query_parquet(sql: str) -> List[tuple]:
     with duckdb.connect(database=":memory:") as con:
         return con.execute(sql).fetchall()

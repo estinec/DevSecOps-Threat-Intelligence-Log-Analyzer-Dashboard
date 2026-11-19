@@ -10,7 +10,11 @@ from app.analytics.gold import (
     read_latest_gold_ip_summary,
     write_gold_ip_summary_parquet,
 )
-from app.db.lakehouse import write_bronze_parquet, write_silver_parquet
+from app.db.lakehouse import (
+    read_latest_silver_events,
+    write_bronze_parquet,
+    write_silver_parquet,
+)
 from app.detections.rules import run_detections
 from app.ingestion.pipeline import ingest_log_file
 from app.parsers.access_log import parse_access_line
@@ -69,6 +73,25 @@ def get_lakehouse_summary() -> List[Dict[str, Any]]:
             detail="No Gold Parquet summary found. Run POST /ingest first.",
         )
     return rows
+
+
+@app.get("/lakehouse/alerts")
+def get_lakehouse_alerts(
+    failed_login_threshold: int = Query(default=3, ge=1),
+    request_volume_threshold: int = Query(default=5, ge=1),
+) -> List[Dict[str, Any]]:
+    events = read_latest_silver_events(LAKEHOUSE_ROOT / "silver")
+    if not events:
+        raise HTTPException(
+            status_code=404,
+            detail="No Silver Parquet events found. Run POST /ingest first.",
+        )
+    alerts = run_detections(
+        events,
+        failed_login_threshold=failed_login_threshold,
+        request_volume_threshold=request_volume_threshold,
+    )
+    return [asdict(alert) for alert in alerts]
 
 
 @app.get("/alerts")
