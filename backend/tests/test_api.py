@@ -37,11 +37,9 @@ def test_alerts_endpoint_with_custom_thresholds():
 def test_post_ingest_and_lakehouse_endpoints(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(main_module, "LAKEHOUSE_ROOT", tmp_path / "lakehouse")
 
-    empty_summary = client.get("/lakehouse/summary")
-    assert empty_summary.status_code == 404
-
-    empty_alerts = client.get("/lakehouse/alerts")
-    assert empty_alerts.status_code == 404
+    assert client.get("/lakehouse/summary").status_code == 404
+    assert client.get("/lakehouse/alerts").status_code == 404
+    assert client.get("/lakehouse/dlq").json() == []
 
     response = client.post(
         "/ingest",
@@ -68,12 +66,11 @@ def test_post_ingest_and_lakehouse_endpoints(tmp_path: Path, monkeypatch):
     assert Path(body["artifacts"]["bronze_parquet"]).exists()
     assert Path(body["artifacts"]["silver_parquet"]).exists()
     assert Path(body["artifacts"]["gold_parquet"]).exists()
-    assert [alert["rule_id"] for alert in body["alerts"]] == ["RULE-AUTH-001", "RULE-VOL-001"]
+    assert Path(body["artifacts"]["dlq_parquet"]).exists()
 
     lakehouse_res = client.get("/lakehouse/summary")
     assert lakehouse_res.status_code == 200
-    rows = lakehouse_res.json()
-    assert rows == [
+    assert lakehouse_res.json() == [
         {
             "source_ip": "203.0.113.25",
             "total_requests": 2,
@@ -88,8 +85,11 @@ def test_post_ingest_and_lakehouse_endpoints(tmp_path: Path, monkeypatch):
         params={"failed_login_threshold": 2, "request_volume_threshold": 2},
     )
     assert lakehouse_alerts_res.status_code == 200
-    lakehouse_alerts = lakehouse_alerts_res.json()
-    assert [alert["rule_id"] for alert in lakehouse_alerts] == ["RULE-AUTH-001", "RULE-VOL-001"]
+    assert [a["rule_id"] for a in lakehouse_alerts_res.json()] == ["RULE-AUTH-001", "RULE-VOL-001"]
+
+    dlq_res = client.get("/lakehouse/dlq")
+    assert dlq_res.status_code == 200
+    assert dlq_res.json()[0]["raw_line"] == "malformed_log_line"
 
 
 def test_post_ingest_requires_source():

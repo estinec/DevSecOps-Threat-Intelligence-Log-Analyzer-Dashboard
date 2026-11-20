@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from app.analytics.gold import (
@@ -26,6 +27,14 @@ DEFAULT_SAMPLE_LOG = Path(__file__).resolve().parent.parent / "sample_logs" / "s
 LAKEHOUSE_ROOT = Path(__file__).resolve().parent.parent / "data" / "lakehouse"
 
 app = FastAPI(title="DevSecOps Threat Intelligence & Log Analyzer API")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 class IngestRequest(BaseModel):
